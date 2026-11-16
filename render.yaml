@@ -1,0 +1,28 @@
+# TravelFix production stack (Render Blueprint).
+# Deploy from a Git repository: connect this repo in Render, New -> Blueprint.
+# The database below is the Render Postgres created for this project
+# (travelfix-db, free plan, Singapore). Supabase is the intended database
+# once a free-project slot is available on the org (currently blocked: the
+# org already uses its 2 free projects for the Zakat app); the backend only
+# needs DATABASE_URL, so switching is a config change.
+services:
+  - type: web
+    name: travelfix-api
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: backend
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
