@@ -161,3 +161,17 @@ VITE_API_URL=http://localhost:10000 npm run dev
 - Free Render Postgres expires 2026-12-16 (see above).
 - The seed data includes 5 verified generic resources and 3 published
   community solutions labelled as personal experience.
+
+## AI plans (Gemini, free tier)
+
+Problem solving uses Google Gemini (`gemini-2.5-flash`, free tier) when
+`GEMINI_API_KEY` is set in the backend environment (Render: Environment tab).
+The model is grounded: it may only use the traveller's own words, published
+community solutions and verified resources from the database, and it must
+never invent phone numbers, addresses, official contacts, opening hours,
+prices or availability. Emergency categories lead with official help.
+
+If the key is unset or the Gemini call fails for any reason, the backend
+falls back to the template plan in `src/plan.js` — a case submission never
+fails because the AI is unavailable. The same grounding and fallback apply
+to follow-up replies (`src/ai.js`).

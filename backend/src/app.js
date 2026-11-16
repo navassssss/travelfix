@@ -8,6 +8,7 @@ const archiver = require("archiver");
 const { query } = require("./db");
 const { signToken, authOptional, requireAuth, requireAdmin } = require("./auth");
 const { CATEGORIES, buildPlan } = require("./plan");
+const { buildAiPlan, buildAiFollowup } = require("./ai");
 
 const app = express();
 const FRONTEND_URL = (process.env.FRONTEND_URL || "").trim();
@@ -145,11 +146,19 @@ app.post("/api/cases", async (req, res) => {
   const resources = await query(
     "SELECT id, name, category, destination, description, url, verified FROM resources WHERE status = 'active' AND verified = TRUE ORDER BY name LIMIT 50"
   );
-  const plan = buildPlan({
+  const templatePlan = buildPlan({
     problem: problem.trim(), category: safeCategory,
     location: (location || "").trim(), destination: (destination || "").trim(),
     publishedSolutions: published.rows, verifiedResources: resources.rows,
   });
+  // Gemini (grounded on the same DB rows) when a key is configured; the
+  // template plan is the fallback if Gemini is off or fails.
+  const aiPlan = await buildAiPlan({
+    problem: problem.trim(), category: safeCategory,
+    location: (location || "").trim(), destination: (destination || "").trim(),
+    publishedSolutions: published.rows, verifiedResources: resources.rows,
+  });
+  const plan = aiPlan || templatePlan;
 
   const { rows } = await query(
     `INSERT INTO cases (profile_id, guest_token, problem, category, location, destination, urgency, status, summary, immediate_actions, steps, alternatives, sources, clarification_question)
@@ -196,7 +205,19 @@ app.post("/api/cases/:id/followups", async (req, res) => {
     lower.includes((r.category || "").toLowerCase()) || (r.destination && lower.includes(r.destination.toLowerCase()))
   );
   let reply;
-  if (c.status === "Clarification Required" && message.trim().length >= 10) {
+  // Gemini first (grounded on the case, history and verified resources);
+  // the canned replies below are the fallback if Gemini is off or fails.
+  const priorMessages = await query("SELECT id, role, content, created_at FROM case_messages WHERE case_id = $1 ORDER BY created_at ASC", [c.id]);
+  const aiReply = await buildAiFollowup({
+    problem: c.problem, category: c.category, location: c.location, destination: c.destination,
+    messages: priorMessages.rows, verifiedResources: resources.rows,
+  });
+  if (aiReply) {
+    reply = aiReply;
+    if (c.status === "Clarification Required" && message.trim().length >= 10) {
+      await query("UPDATE cases SET status = 'Solution Ready', updated_at = now() WHERE id = $1", [c.id]);
+    }
+  } else if (c.status === "Clarification Required" && message.trim().length >= 10) {
     reply = "Thanks — that helps. I have updated your case to Solution Ready. Work through the steps in your plan, starting with the immediate actions, and tell me here if any step does not work so I can suggest an alternative.";
     await query("UPDATE cases SET status = 'Solution Ready', updated_at = now() WHERE id = $1", [c.id]);
   } else if (relevant.length > 0) {
