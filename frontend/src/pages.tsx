@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { api, getGuestToken, signOut, TOKEN_KEY, GUEST_KEY, PROFILE_KEY, type CaseItem, type Contribution, type Profile, type Resource, type Solution } from "./api";
 import { storage } from "./storage";
 import { solvePrefill } from "./App";
+import { CategoryPicker, CATEGORY_META, ConfirmDialog, EmptyState, SectionHeader, SkeletonGrid, StatCard, useToast } from "./ui";
 
-export const CATEGORIES = [
-  "Transportation", "Accommodation", "Lost Belongings & Documents", "Money & Payments",
-  "Medical Assistance", "Communication & Language", "Safety & Unexpected Situations", "Other",
-];
+export const CATEGORIES = CATEGORY_META.map((c) => c.name);
 
 export interface Ctx {
   navigate: (path: string) => void;
@@ -27,15 +25,22 @@ function ErrorBox({ error }: { error: string | null }) {
   return error ? <div className="error">{error}</div> : null;
 }
 
+function CategoryPill({ category }: { category: string }) {
+  const meta = CATEGORY_META.find((c) => c.name === category);
+  return meta ? <span className="pill status">{meta.icon} {category}</span> : <span className="pill status">{category}</span>;
+}
+
 // ---------------- Home ----------------
 export function HomePage({ navigate }: Ctx) {
   const [problem, setProblem] = useState("");
   const [location, setLocation] = useState("");
   const [recent, setRecent] = useState<Solution[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
   const [guestCases, setGuestCases] = useState<CaseItem[]>([]);
+  const { showToast, ToastEl } = useToast();
 
   useEffect(() => {
-    api.solutions().then((r) => setRecent(r.solutions.slice(0, 3))).catch(() => {});
+    api.solutions().then((r) => setRecent(r.solutions.slice(0, 3))).catch(() => {}).finally(() => setLoadingRecent(false));
     const gt = getGuestToken();
     if (gt) api.guestCases(gt).then((r) => setGuestCases(r.cases.slice(0, 3))).catch(() => {});
   }, []);
@@ -46,19 +51,35 @@ export function HomePage({ navigate }: Ctx) {
     navigate("/solve");
   };
 
+  const useLocation = () => {
+    if (!navigator.geolocation) { showToast("Location is not available in this browser."); return; }
+    navigator.geolocation.getCurrentPosition(
+      (p) => setLocation(`${p.coords.latitude.toFixed(4)}, ${p.coords.longitude.toFixed(4)}`),
+      () => showToast("Could not get your location — type it in instead.")
+    );
+  };
+
   return (
     <>
       <section className="hero">
-        <h1>Something went wrong during your journey?</h1>
-        <p>Tell TravelFix what happened and where you are. You will get practical next steps — no account needed.</p>
-        <div className="card" style={{ color: "#1c2733" }}>
+        <div className="hero-copy">
+          <span className="eyebrow">No account needed</span>
+          <h1>Something went wrong during your journey?</h1>
+          <p className="lede">Tell TravelFix what happened and where you are. You will get practical next steps — grounded in real solutions from travellers and verified local resources.</p>
+          <ul className="hero-points">
+            <li><span className="tick" aria-hidden>✓</span> Immediate actions first, then step-by-step guidance</li>
+            <li><span className="tick" aria-hidden>✓</span> Ask follow-ups if a step does not work</li>
+            <li><span className="tick" aria-hidden>✓</span> No invented phone numbers or addresses — ever</li>
+          </ul>
+        </div>
+        <div className="card">
           <label>What happened?</label>
           <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="e.g. My flight was cancelled in Kochi and I need to reach Munnar tonight" />
           <label>Where are you now?</label>
           <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City or area, e.g. Kochi, India" />
           <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn" onClick={start}>Find a Solution</button>
-            <button className="btn secondary" onClick={() => { if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => setLocation(`${p.coords.latitude.toFixed(4)}, ${p.coords.longitude.toFixed(4)}`)); }}>Use my current location</button>
+            <button className="btn secondary" onClick={useLocation}>Use my current location</button>
           </div>
         </div>
       </section>
@@ -72,38 +93,46 @@ export function HomePage({ navigate }: Ctx) {
         </div>
       )}
 
-      <section>
-        <h2>Common problems</h2>
-        {CATEGORIES.map((c) => (
-          <button key={c} className="chip" onClick={() => { solvePrefill.problem = ""; solvePrefill.location = location; navigate("/solve"); }}>{c}</button>
+      <SectionHeader eyebrow="Common problems" title="What went wrong?" body="Pick a category to start, or describe your problem above." />
+      <div className="cat-grid">
+        {CATEGORY_META.map((c) => (
+          <button key={c.name} type="button" className="cat-card" onClick={() => { solvePrefill.problem = ""; solvePrefill.location = location; navigate("/solve"); }}>
+            <span className="cat-icon" aria-hidden>{c.icon}</span>
+            <span className="cat-name">{c.name}</span>
+            <span className="cat-hint">{c.hint}</span>
+          </button>
         ))}
-      </section>
+      </div>
 
-      <section className="card">
-        <h2>How TravelFix Works</h2>
-        <ol className="steps">
-          <li><strong>Describe the problem</strong> — what happened, and where you are.</li>
-          <li><strong>Get a plan</strong> — immediate actions first, then step-by-step guidance grounded in published solutions and verified local resources.</li>
-          <li><strong>Ask follow-ups</strong> — tell us what worked or did not, and get alternatives.</li>
-          <li><strong>Mark it resolved</strong> — and share feedback so the next traveller benefits.</li>
-        </ol>
+      <div className="card">
+        <SectionHeader eyebrow="How it works" title="From problem to plan in minutes" />
+        <div className="how-grid">
+          <div className="how-step"><span className="num">1</span><strong>Describe the problem</strong><p>What happened, and where you are.</p></div>
+          <div className="how-step"><span className="num">2</span><strong>Get a plan</strong><p>Immediate actions first, then steps grounded in published solutions and verified local resources.</p></div>
+          <div className="how-step"><span className="num">3</span><strong>Ask follow-ups</strong><p>Tell us what worked or did not, and get alternatives.</p></div>
+          <div className="how-step"><span className="num">4</span><strong>Mark it resolved</strong><p>Share feedback so the next traveller benefits.</p></div>
+        </div>
         <p className="muted">TravelFix never invents phone numbers, addresses or official contacts. Emergency problems always start with official help.</p>
-      </section>
+      </div>
 
-      <section>
-        <h2>Recently published local solutions</h2>
-        {recent.length === 0 && <p className="muted">No published solutions yet — check back soon.</p>}
+      <SectionHeader eyebrow="From travellers" title="Recently published local solutions" />
+      {loadingRecent ? <SkeletonGrid /> : recent.length === 0 ? (
+        <EmptyState icon="🧭" title="No published solutions yet" body="Travellers have not published any solutions yet. Check back soon — or solve a problem and share what worked." />
+      ) : (
         <div className="grid">
           {recent.map((s) => (
-            <article key={s.id} className="card" style={{ margin: 0 }}>
+            <article key={s.id} className="card solution-card" style={{ margin: 0 }}>
               <h3>{s.title}</h3>
-              <p className="muted">{s.destination}</p>
+              <p className="dest">📍 {s.destination}</p>
               <p>{s.problem.slice(0, 140)}…</p>
-              <button className="btn small" onClick={() => navigate(`/local-solutions/${s.id}`)}>Read solution</button>
+              <div className="card-foot">
+                <button className="btn small" onClick={() => navigate(`/local-solutions/${s.id}`)}>Read solution</button>
+              </div>
             </article>
           ))}
         </div>
-      </section>
+      )}
+      {ToastEl}
     </>
   );
 }
@@ -134,21 +163,22 @@ export function SolvePage({ navigate }: Ctx) {
 
   return (
     <div className="card">
-      <h2>Solve a problem</h2>
-      <p className="muted">No account needed. Your case stays private to you.</p>
+      <div className="page-head" style={{ marginTop: 0 }}>
+        <span className="eyebrow">Guest — no account needed</span>
+        <h2>Solve a problem</h2>
+        <p className="muted">Your case stays private to you. Describe what happened and we will build a plan around it.</p>
+      </div>
       <ErrorBox error={error} />
       <label>Problem description</label>
       <textarea value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="What happened?" />
       <label>Category</label>
-      <div>{CATEGORIES.map((c) => (
-        <button key={c} className={`chip ${category === c ? "active" : ""}`} onClick={() => setCategory(c)}>{c}</button>
-      ))}</div>
+      <CategoryPicker value={category} onChange={setCategory} />
       <label>Current location</label>
       <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Where are you now?" />
       <label>Destination / problem location (if different)</label>
       <input value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where were you headed?" />
       <div style={{ marginTop: 18 }}>
-        <button className="btn" onClick={submit} disabled={busy}>{busy ? "Working…" : "Submit Problem"}</button>
+        <button className="btn" onClick={submit} disabled={busy}>{busy ? "Building your plan…" : "Submit Problem"}</button>
       </div>
     </div>
   );
@@ -161,12 +191,13 @@ export function CasePage({ navigate, id }: Ctx & { id: number }) {
   const [followup, setFollowup] = useState("");
   const [rating, setRating] = useState(0);
   const [done, setDone] = useState<string[]>([]);
+  const { showToast, ToastEl } = useToast();
 
   const load = () => api.getCase(id).then(setData).catch((e) => setError(e instanceof Error ? e.message : "Could not load the case."));
   useEffect(() => { load(); }, [id]);
 
   if (error) return <div className="card"><ErrorBox error={error} /><button className="btn" onClick={() => navigate("/")}>Back home</button></div>;
-  if (!data) return <div className="card">Loading your plan…</div>;
+  if (!data) return <div className="card"><SkeletonGrid count={1} /><p className="muted">Loading your plan…</p></div>;
   const c = data.case;
   const progress = c.status === "Resolved" ? 4 : c.status === "Solution Ready" || c.status === "Awaiting User" ? 2 : 1;
 
@@ -176,6 +207,11 @@ export function CasePage({ navigate, id }: Ctx & { id: number }) {
     setFollowup("");
     setData({ case: c, messages: r.messages });
     load();
+  };
+
+  const copyPlan = () => {
+    navigator.clipboard?.writeText(`${c.summary}\n\nDo these first:\n${c.immediate_actions.map((a) => `- ${a}`).join("\n")}\n\nSteps:\n${c.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`);
+    showToast("Plan copied to clipboard.");
   };
 
   return (
@@ -188,7 +224,7 @@ export function CasePage({ navigate, id }: Ctx & { id: number }) {
         </div>
         <p className="muted">Case #{c.id} · {c.category} · {c.destination || c.location} · {new Date(c.created_at).toLocaleString()}</p>
         <p><strong>Problem:</strong> {c.problem}</p>
-        <div className="progress">
+        <div className="progress" aria-label={`Case progress: ${["Submitted", "Plan ready", "Taking action", "Resolved"][progress - 1]}`}>
           {["Submitted", "Plan ready", "Taking action", "Resolved"].map((s, i) => (
             <div key={s} className={progress > i ? "done" : ""}>{s}</div>
           ))}
@@ -216,7 +252,7 @@ export function CasePage({ navigate, id }: Ctx & { id: number }) {
         <h3>Alternatives</h3>
         <ul>{c.alternatives.map((a, i) => <li key={i}>{a}</li>)}</ul>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          <button className="btn small secondary" onClick={() => navigator.clipboard?.writeText(`${c.summary}\n\nDo these first:\n${c.immediate_actions.map((a) => `- ${a}`).join("\n")}\n\nSteps:\n${c.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`)}>Copy plan</button>
+          <button className="btn small secondary" onClick={copyPlan}>Copy plan</button>
           <button className="btn small secondary" onClick={() => window.print()}>Print view</button>
         </div>
       </div>
@@ -245,15 +281,16 @@ export function CasePage({ navigate, id }: Ctx & { id: number }) {
       <div className="card">
         <h3>Did this resolve your problem?</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn" onClick={() => api.setCaseStatus(id, "Resolved").then(load)}>Mark as Resolved</button>
+          <button className="btn" onClick={() => api.setCaseStatus(id, "Resolved").then(() => { load(); showToast("Marked as resolved — thank you!"); })}>Mark as Resolved</button>
           <button className="btn secondary" onClick={() => api.setCaseStatus(id, "Unresolved").then(load)}>Still unresolved — show alternatives</button>
         </div>
         <label>How helpful was this? (1–5 stars)</label>
         <div>{[1, 2, 3, 4, 5].map((n) => (
           <button key={n} className="chip" onClick={() => setRating(n)} style={rating >= n ? { background: "#e8a33d", borderColor: "#e8a33d" } : {}}>{"★".repeat(n)}</button>
         ))}</div>
-        <button className="btn small" disabled={rating === 0} onClick={() => api.feedback(id, { rating, helpful: rating >= 4 }).then(load)}>Submit feedback</button>
+        <button className="btn small" disabled={rating === 0} onClick={() => api.feedback(id, { rating, helpful: rating >= 4 }).then(() => { load(); showToast("Thanks for the feedback!"); })}>Submit feedback</button>
       </div>
+      {ToastEl}
     </>
   );
 }
@@ -263,17 +300,24 @@ export function SolutionsPage({ navigate }: Ctx) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [list, setList] = useState<Solution[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => api.solutions(search, category).then((r) => setList(r.solutions)).catch((e) => setError(e.message));
+  const load = () => {
+    setLoading(true);
+    api.solutions(search, category).then((r) => setList(r.solutions)).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   return (
     <div className="card">
-      <h2>Local Solutions</h2>
-      <p className="muted">Practical solutions shared by travellers — only approved and published ones are shown here.</p>
+      <div className="page-head" style={{ marginTop: 0 }}>
+        <span className="eyebrow">Community knowledge</span>
+        <h2>Local Solutions</h2>
+        <p className="muted">Practical solutions shared by travellers — only approved and published ones are shown here.</p>
+      </div>
       <ErrorBox error={error} />
-      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by destination or problem…" />
+      <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by destination or problem…" onKeyDown={(e) => { if (e.key === "Enter") load(); }} />
       <div style={{ marginTop: 10 }}>
         <button className={`chip ${!category ? "active" : ""}`} onClick={() => setCategory("")}>All</button>
         {CATEGORIES.map((c) => (
@@ -281,18 +325,23 @@ export function SolutionsPage({ navigate }: Ctx) {
         ))}
         <button className="btn small" onClick={load}>Search</button>
       </div>
-      <p className="muted">{list.length} solution{list.length === 1 ? "" : "s"}</p>
-      <div className="grid">
-        {list.map((s) => (
-          <article key={s.id} className="card" style={{ margin: 0 }}>
-            <h3>{s.title}</h3>
-            <p className="muted">{s.destination} · by {s.contributor_name}</p>
-            <p>{s.problem.slice(0, 140)}…</p>
-            <button className="btn small" onClick={() => navigate(`/local-solutions/${s.id}`)}>Read solution</button>
-          </article>
-        ))}
-      </div>
-      {list.length === 0 && <p className="muted">No solutions match that search yet.</p>}
+      <p className="muted">{loading ? "Searching…" : `${list.length} solution${list.length === 1 ? "" : "s"}`}</p>
+      {loading ? <SkeletonGrid /> : list.length === 0 ? (
+        <EmptyState icon="🔍" title="No solutions match that search yet" body="Try a different destination or category — or solve a problem and share what worked." action={<button className="btn" onClick={() => navigate("/solve")}>Solve a problem</button>} />
+      ) : (
+        <div className="grid">
+          {list.map((s) => (
+            <article key={s.id} className="card solution-card" style={{ margin: 0 }}>
+              <h3>{s.title}</h3>
+              <p className="dest">📍 {s.destination} · by {s.contributor_name}</p>
+              <p>{s.problem.slice(0, 140)}…</p>
+              <div className="card-foot">
+                <button className="btn small" onClick={() => navigate(`/local-solutions/${s.id}`)}>Read solution</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -303,13 +352,14 @@ export function SolutionPage({ navigate, id }: Ctx & { id: number }) {
   const [saved, setSaved] = useState(false);
   const [reported, setReported] = useState(false);
   const [reason, setReason] = useState("");
+  const { showToast, ToastEl } = useToast();
 
   useEffect(() => {
     api.solution(id).then((r) => setS(r.solution)).catch((e) => setError(e.message));
   }, [id]);
 
   if (error) return <div className="card"><ErrorBox error={error} /></div>;
-  if (!s) return <div className="card">Loading…</div>;
+  if (!s) return <div className="card"><SkeletonGrid count={1} /><p className="muted">Loading…</p></div>;
   return (
     <div className="card">
       <p className="muted"><button className="btn small secondary" onClick={() => navigate("/local-solutions")}>← All solutions</button></p>
@@ -321,7 +371,7 @@ export function SolutionPage({ navigate, id }: Ctx & { id: number }) {
       {s.steps.length > 0 && (<><h3>Steps</h3><ol className="steps">{s.steps.map((st, i) => <li key={i}>{st}</li>)}</ol></>)}
       {s.tips && (<><h3>Practical tips</h3><p>{s.tips}</p></>)}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button className="btn small" onClick={async () => { try { await api.saveSolution(s.id); setSaved(true); } catch (e) { setError(e instanceof Error ? e.message : "Sign in to save solutions."); } }}>{saved ? "Saved ✓" : "Save solution"}</button>
+        <button className="btn small" onClick={async () => { try { await api.saveSolution(s.id); setSaved(true); showToast("Solution saved to your account."); } catch (e) { setError(e instanceof Error ? e.message : "Sign in to save solutions."); } }}>{saved ? "Saved ✓" : "Save solution"}</button>
         <button className="btn small secondary" onClick={() => window.print()}>Print view</button>
       </div>
       <h3>Report incorrect information</h3>
@@ -331,6 +381,7 @@ export function SolutionPage({ navigate, id }: Ctx & { id: number }) {
           <button className="btn small secondary" disabled={!reason.trim()} onClick={async () => { await api.report({ target_type: "solution", target_id: s.id, reason }); setReported(true); }}>Report</button>
         </div>
       )}
+      {ToastEl}
     </div>
   );
 }
@@ -364,9 +415,12 @@ export function AuthPage({ navigate, refreshProfile }: Ctx) {
   };
 
   return (
-    <div className="card">
-      <h2>Sign in or create an account</h2>
-      <p className="muted">One account covers Travel and Contribute. You never need an account to get help with a problem.</p>
+    <div className="card" style={{ maxWidth: 560, margin: "24px auto" }}>
+      <div className="page-head" style={{ marginTop: 0 }}>
+        <span className="eyebrow">One account — travel &amp; contribute</span>
+        <h2>Sign in or create an account</h2>
+        <p className="muted">One account covers Travel and Contribute. You never need an account to get help with a problem.</p>
+      </div>
       <ErrorBox error={error} />
       <label>Your name</label>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Navas" />
@@ -415,17 +469,17 @@ export function DashboardPage({ navigate, profile }: Ctx) {
         </div>
       </div>
       <div className="grid">
-        <div className="card"><h3>My Travel</h3><p>{active.length} active cases · {resolved.length} resolved</p><button className="btn small" onClick={() => navigate("/my-travel")}>Open My Travel</button></div>
-        <div className="card"><h3>My Contributions</h3><p>{contribs.filter((c) => c.status === "Pending Review").length} pending · {contribs.filter((c) => c.status === "Published").length} published</p><button className="btn small" onClick={() => navigate("/my-contributions")}>Open My Contributions</button></div>
-        <div className="card"><h3>Saved solutions</h3><p>{saved.length} saved</p></div>
-        {overview && <div className="card"><h3>Platform</h3><p>{overview.totals.users} users · {overview.totals.cases} cases · {overview.totals.published} published · {overview.totals.pending} pending review</p></div>}
+        <StatCard value={`${active.length} active · ${resolved.length} resolved`} label="My Travel" />
+        <StatCard value={`${contribs.filter((c) => c.status === "Pending Review").length} pending · ${contribs.filter((c) => c.status === "Published").length} published`} label="My Contributions" />
+        <StatCard value={saved.length} label="Saved solutions" />
+        {overview && <StatCard value={`${overview.totals.users} users · ${overview.totals.cases} cases · ${overview.totals.published} published · ${overview.totals.pending} pending review`} label="Platform" />}
       </div>
       <div className="card">
         <h3>Recent activity</h3>
         {cases.slice(0, 5).map((c) => (
           <p key={c.id}>Case #{c.id} — {c.problem.slice(0, 70)}… <StatusPill value={c.status} /> <button className="btn small secondary" onClick={() => navigate(`/case/${c.id}`)}>Open</button></p>
         ))}
-        {cases.length === 0 && <p className="muted">No cases yet. Solve your first problem to see it here.</p>}
+        {cases.length === 0 && <EmptyState icon="🧭" title="No cases yet" body="Solve your first problem to see it here." action={<button className="btn" onClick={() => navigate("/solve")}>Solve a problem</button>} />}
       </div>
     </>
   );
@@ -439,6 +493,7 @@ export function MyTravelPage({ navigate, profile }: Ctx) {
     api.myCases().then((r) => setCases(r.cases)).catch(() => {});
   }, [profile]);
   if (!profile) return <div className="card">Please sign in.</div>;
+  const countFor = (f: string) => f === "all" ? cases.length : cases.filter((c) => f === "active" ? (c.status !== "Resolved" && c.status !== "Closed") : f === "resolved" ? c.status === "Resolved" : c.status === "Unresolved").length;
   const shown = cases.filter((c) =>
     filter === "all" ? true : filter === "active" ? (c.status !== "Resolved" && c.status !== "Closed") : filter === "resolved" ? c.status === "Resolved" : c.status === "Unresolved"
   );
@@ -447,17 +502,17 @@ export function MyTravelPage({ navigate, profile }: Ctx) {
       <h2>My Travel</h2>
       <div className="tabs">
         {(["all", "active", "unresolved", "resolved"] as const).map((f) => (
-          <button key={f} className={filter === f ? "active" : ""} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)} ({f === "all" ? cases.length : cases.filter((c) => f === "active" ? (c.status !== "Resolved" && c.status !== "Closed") : f === "resolved" ? c.status === "Resolved" : c.status === "Unresolved").length})</button>
+          <button key={f} className={filter === f ? "active" : ""} onClick={() => setFilter(f)}>{f[0].toUpperCase() + f.slice(1)} ({countFor(f)})</button>
         ))}
       </div>
       {shown.map((c) => (
-        <div key={c.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0" }}>
+        <div key={c.id} className="list-row">
           <strong>{c.problem.slice(0, 90)}</strong> <StatusPill value={c.status} /> <Urgency value={c.urgency} />
           <p className="muted">{c.category} · {c.destination || c.location} · {new Date(c.created_at).toLocaleDateString()}</p>
           <button className="btn small" onClick={() => navigate(`/case/${c.id}`)}>Open case</button>
         </div>
       ))}
-      {shown.length === 0 && <p className="muted">No cases in this view.</p>}
+      {shown.length === 0 && <EmptyState icon="🧳" title="No cases in this view" body="Cases you submit will show up here, grouped by status." />}
     </div>
   );
 }
@@ -468,6 +523,7 @@ export function MyContributionsPage({ navigate, profile }: Ctx) {
   const [form, setForm] = useState({ destination: "", title: "", problem: "", solution: "", tips: "" });
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const { showToast, ToastEl } = useToast();
 
   const load = () => api.myContributions().then((r) => setList(r.contributions)).catch(() => {});
   useEffect(() => {
@@ -480,7 +536,9 @@ export function MyContributionsPage({ navigate, profile }: Ctx) {
     setError(null); setOk(null);
     try {
       await api.createContribution({ ...form, steps: [], sources: [], submit: !asDraft });
-      setOk(asDraft ? "Draft saved." : "Submitted for review. An admin will check it before it goes public.");
+      const msg = asDraft ? "Draft saved." : "Submitted for review. An admin will check it before it goes public.";
+      setOk(msg);
+      showToast(msg);
       setForm({ destination: "", title: "", problem: "", solution: "", tips: "" });
       load();
     } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); }
@@ -506,18 +564,19 @@ export function MyContributionsPage({ navigate, profile }: Ctx) {
       <div className="card">
         <h2>My Contributions</h2>
         {list.map((c) => (
-          <div key={c.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0" }}>
+          <div key={c.id} className="list-row">
             <strong>{c.title}</strong> <StatusPill value={c.status} />
             <p className="muted">{c.destination} · {new Date(c.created_at).toLocaleDateString()}</p>
             {c.admin_comment && <p><strong>Admin:</strong> {c.admin_comment}</p>}
             {c.status === "Published" && <button className="btn small" onClick={() => navigate(`/local-solutions/${c.id}`)}>View public page</button>}
             {["Draft", "Changes Requested", "Rejected"].includes(c.status) && (
-              <button className="btn small secondary" onClick={async () => { await api.updateContribution(c.id, { submit: true }); load(); }}>Resubmit for review</button>
+              <button className="btn small secondary" onClick={async () => { await api.updateContribution(c.id, { submit: true }); load(); showToast("Resubmitted for review."); }}>Resubmit for review</button>
             )}
           </div>
         ))}
-        {list.length === 0 && <p className="muted">No contributions yet.</p>}
+        {list.length === 0 && <EmptyState icon="✍️" title="No contributions yet" body="Share a problem you solved while travelling — it helps the next traveller in the same spot." />}
       </div>
+      {ToastEl}
     </>
   );
 }
@@ -527,6 +586,8 @@ export function SettingsPage({ navigate, profile, refreshProfile }: Ctx) {
   const [name, setName] = useState(profile?.name || "");
   const [home, setHome] = useState(profile?.home_base || "");
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { showToast, ToastEl } = useToast();
   useEffect(() => { if (!profile) navigate("/auth"); }, [profile]);
   if (!profile) return <div className="card">Please sign in.</div>;
   return (
@@ -537,13 +598,24 @@ export function SettingsPage({ navigate, profile, refreshProfile }: Ctx) {
       <label>Email</label><input value={profile.email} disabled />
       <label>Home base</label><input value={home} onChange={(e) => setHome(e.target.value)} placeholder="Your home city" />
       <div style={{ marginTop: 14 }}>
-        <button className="btn" onClick={async () => { await api.patch("/api/profile", { name, home_base: home }); setMsg("Saved."); refreshProfile(); }}>Save changes</button>
+        <button className="btn" onClick={async () => { await api.patch("/api/profile", { name, home_base: home }); setMsg("Saved."); showToast("Settings saved."); refreshProfile(); }}>Save changes</button>
       </div>
       <h3 style={{ marginTop: 28 }}>Sign out</h3>
       <button className="btn secondary" onClick={() => { signOut(); navigate("/"); window.location.reload(); }}>Sign out</button>
       <h3 style={{ marginTop: 28, color: "var(--danger)" }}>Danger zone</h3>
       <p className="muted">Deleting your account removes your profile, contributions and saved solutions. Your cases become anonymous.</p>
-      <button className="btn danger" onClick={async () => { if (confirm("Delete your account permanently?")) { await api.del("/api/profile"); signOut(); navigate("/"); window.location.reload(); } }}>Delete my account</button>
+      <button className="btn danger" onClick={() => setConfirmDelete(true)}>Delete my account</button>
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete your account permanently?"
+          body="This removes your profile, contributions and saved solutions. Your cases become anonymous. This cannot be undone."
+          confirmLabel="Yes, delete my account"
+          danger
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={async () => { await api.del("/api/profile"); signOut(); navigate("/"); window.location.reload(); }}
+        />
+      )}
+      {ToastEl}
     </div>
   );
 }
@@ -558,7 +630,7 @@ export function AdminOverviewPage({ navigate, profile }: Ctx) {
   }, [profile]);
   if (!profile) return <div className="card">Please sign in.</div>;
   if (error) return <div className="card"><ErrorBox error={error} /></div>;
-  if (!data) return <div className="card">Loading…</div>;
+  if (!data) return <div className="card"><SkeletonGrid count={1} /><p className="muted">Loading…</p></div>;
   const downloadZip = async () => {
     const token = storage.get(TOKEN_KEY);
     const res = await fetch(`${(import.meta.env.VITE_API_URL as string) || ""}/api/export/zip`, { headers: { Authorization: `Bearer ${token}` } });
@@ -572,13 +644,16 @@ export function AdminOverviewPage({ navigate, profile }: Ctx) {
   return (
     <>
       <div className="card">
-        <h2>Admin Overview</h2>
+        <div className="page-head" style={{ marginTop: 0 }}>
+          <span className="eyebrow">Admin</span>
+          <h2>Admin Overview</h2>
+        </div>
         <div className="grid">
-          <div className="card"><strong>{data.totals.users}</strong><p className="muted">Registered users</p></div>
-          <div className="card"><strong>{data.totals.cases}</strong><p className="muted">Submitted problems</p></div>
-          <div className="card"><strong>{data.totals.published}</strong><p className="muted">Published solutions</p></div>
-          <div className="card"><strong>{data.totals.pending}</strong><p className="muted">Pending contributions</p></div>
-          <div className="card"><strong>{data.totals.reported}</strong><p className="muted">Open reports</p></div>
+          <StatCard value={data.totals.users} label="Registered users" />
+          <StatCard value={data.totals.cases} label="Submitted problems" />
+          <StatCard value={data.totals.published} label="Published solutions" />
+          <StatCard value={data.totals.pending} label="Pending contributions" />
+          <StatCard value={data.totals.reported} label="Open reports" />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button className="btn" onClick={() => navigate("/admin/contributions")}>Review contributions</button>
@@ -590,8 +665,10 @@ export function AdminOverviewPage({ navigate, profile }: Ctx) {
       <div className="card">
         <h3>Recent submissions</h3>
         {data.recentCases.map((c) => <p key={c.id}>Case #{c.id} — {c.problem.slice(0, 70)}… <StatusPill value={c.status} /></p>)}
+        {data.recentCases.length === 0 && <p className="muted">No cases yet.</p>}
         <h3>Recent moderation activity</h3>
         {data.recentContributions.map((c) => <p key={c.id}>{c.title} — <StatusPill value={c.status} /></p>)}
+        {data.recentContributions.length === 0 && <p className="muted">No contributions yet.</p>}
       </div>
     </>
   );
@@ -601,6 +678,7 @@ export function AdminContributionsPage({ navigate, profile }: Ctx) {
   const [list, setList] = useState<Contribution[]>([]);
   const [filter, setFilter] = useState("Pending Review");
   const [comment, setComment] = useState("");
+  const { showToast, ToastEl } = useToast();
   useEffect(() => {
     if (!profile) { navigate("/auth"); return; }
     api.adminContributions(filter).then((r) => setList(r.contributions)).catch(() => {});
@@ -609,6 +687,7 @@ export function AdminContributionsPage({ navigate, profile }: Ctx) {
   const review = async (id: number, action: string) => {
     await api.reviewContribution(id, action, comment || undefined);
     setComment("");
+    showToast(action === "approve" ? "Approved and published." : "Review recorded.");
     api.adminContributions(filter).then((r) => setList(r.contributions));
   };
   return (
@@ -622,7 +701,7 @@ export function AdminContributionsPage({ navigate, profile }: Ctx) {
       <label>Reason / comment (required for reject or correction requests)</label>
       <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="e.g. Please add the exact steps you took." />
       {list.map((c) => (
-        <div key={c.id} style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}>
+        <div key={c.id} className="list-row">
           <strong>{c.title}</strong> <StatusPill value={c.status} />
           <p className="muted">{c.destination} · by {(c as unknown as { contributor_name?: string }).contributor_name || "—"}</p>
           <p><strong>Problem:</strong> {c.problem}</p>
@@ -636,7 +715,8 @@ export function AdminContributionsPage({ navigate, profile }: Ctx) {
           </div>
         </div>
       ))}
-      {list.length === 0 && <p className="muted">Nothing here.</p>}
+      {list.length === 0 && <EmptyState icon="📋" title="Nothing here" body="No contributions match this filter right now." />}
+      {ToastEl}
     </div>
   );
 }
@@ -645,6 +725,7 @@ export function AdminResourcesPage({ navigate, profile }: Ctx) {
   const [list, setList] = useState<Resource[]>([]);
   const [form, setForm] = useState({ name: "", category: "Emergency", destination: "", description: "", url: "" });
   const [error, setError] = useState<string | null>(null);
+  const { showToast, ToastEl } = useToast();
   useEffect(() => {
     if (!profile) { navigate("/auth"); return; }
     api.adminResources().then((r) => setList(r.resources)).catch(() => {});
@@ -665,7 +746,7 @@ export function AdminResourcesPage({ navigate, profile }: Ctx) {
         <label>Description</label><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         <label>Source URL</label><input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://…" />
         <div style={{ marginTop: 12 }}>
-          <button className="btn" onClick={async () => { try { await api.saveResource({ ...form, verified: true }); setForm({ name: "", category: "Emergency", destination: "", description: "", url: "" }); reload(); } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); } }}>Add resource</button>
+          <button className="btn" onClick={async () => { try { await api.saveResource({ ...form, verified: true }); setForm({ name: "", category: "Emergency", destination: "", description: "", url: "" }); reload(); showToast("Resource added."); } catch (e) { setError(e instanceof Error ? e.message : "Could not save."); } }}>Add resource</button>
         </div>
       </div>
       <div className="card">
@@ -689,12 +770,14 @@ export function AdminResourcesPage({ navigate, profile }: Ctx) {
           </tbody>
         </table>
       </div>
+      {ToastEl}
     </>
   );
 }
 
 export function AdminReportsPage({ navigate, profile }: Ctx) {
   const [list, setList] = useState<{ id: number; target_type: string; target_id: number; reason: string; reporter_email: string | null; status: string; created_at: string }[]>([]);
+  const { showToast, ToastEl } = useToast();
   useEffect(() => {
     if (!profile) { navigate("/auth"); return; }
     api.adminReports().then((r) => setList(r.reports)).catch(() => {});
@@ -702,13 +785,14 @@ export function AdminReportsPage({ navigate, profile }: Ctx) {
   if (!profile) return <div className="card">Please sign in.</div>;
   const setStatus = async (id: number, status: string) => {
     await api.setReportStatus(id, status, status === "resolved");
+    showToast(status === "resolved" ? "Report resolved." : "Report marked as investigating.");
     api.adminReports().then((r) => setList(r.reports));
   };
   return (
     <div className="card">
       <h2>Reports Management</h2>
       {list.map((r) => (
-        <div key={r.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0" }}>
+        <div key={r.id} className="list-row">
           <strong>{r.target_type} #{r.target_id}</strong> <StatusPill value={r.status} />
           <p>{r.reason}</p>
           <p className="muted">Reported by {r.reporter_email || "anonymous"} · {new Date(r.created_at).toLocaleString()}</p>
@@ -718,7 +802,8 @@ export function AdminReportsPage({ navigate, profile }: Ctx) {
           </div>
         </div>
       ))}
-      {list.length === 0 && <p className="muted">No reports.</p>}
+      {list.length === 0 && <EmptyState icon="🛡️" title="No reports" body="Reports about incorrect solutions or resources will appear here." />}
+      {ToastEl}
     </div>
   );
 }
