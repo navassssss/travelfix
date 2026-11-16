@@ -164,7 +164,7 @@ VITE_API_URL=http://localhost:10000 npm run dev
 
 ## AI plans (Gemini, free tier)
 
-Problem solving uses Google Gemini (`gemini-2.5-flash`, free tier) when
+Problem solving uses Google Gemini (`gemini-3.5-flash-lite`, free tier) when
 `GEMINI_API_KEY` is set in the backend environment (Render: Environment tab).
 The model is grounded: it may only use the traveller's own words, published
 community solutions and verified resources from the database, and it must
